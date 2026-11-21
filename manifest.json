@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "elmegga.omaplayer",
+  "name": "ElMeGGa OmaPlayer",
+  "version": "1.0.0",
+  "author": "ElMeGGa",
+  "description": "Carátulas, metadatos y controles de reproducción multimedia.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "ElMeGGa OmaPlayer",
+    "description": "Reproductor multimedia para la barra de Omarchy.",
+    "category": "Media",
+    "defaultSection": "right",
+    "allowMultiple": false
+  },
+  "license": "MIT"
+}
