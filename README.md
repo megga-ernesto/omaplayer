@@ -2,9 +2,11 @@
 
 Now-playing widget for the Omarchy shell, with playback controls, live audio visualizers, and optional synced lyrics.
 
-![OmaPlayer in Base, Glass and Blur](preview.jpg)
+![ElMeGGa OmaPlayer con su panel y funciones principales](preview.jpg)
 
-*Panels rendered from the plugin with sample data and the Rubí OLED palette. The background blur is simulated in the preview.*
+*The previews use sample data and the Rubí OLED palette. The appearance comparison simulates the backdrop blur.*
+
+[Compare Base, Glass and Blur](docs/appearance-finishes.webp) · [ElMeGGa OmaDesktop](https://github.com/megga-ernesto/ElMeGGa-OmaDesktop)
 
 ## English
 
