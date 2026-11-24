@@ -1,4 +1,5 @@
 import QtQuick
+import "OmaColors.js" as Palette
 import QtQuick.Controls as QQC
 import QtQuick.Layouts
 import QtQuick.Effects
@@ -6,7 +7,6 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Mpris
 import Quickshell.Services.Pipewire
-import Quickshell.Wayland
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
@@ -51,14 +51,12 @@ Ui.BarWidget {
     readonly property int titleFontSize: sizeSetting("titleFontSize", 14, 8, 18)
     readonly property int barIconSize: sizeSetting("barIconSize", 14, 8, 22)
     readonly property bool showBarCover: setting("showBarCover", true) === true
-    property bool backdropBlurFailed: false
 
     readonly property bool autoOnlineArt: setting("autoOnlineArt", true) === true
     readonly property bool shouldFetchCover: autoOnlineArt && onlineArt && (opened || (visible && showBarCover && hasBarMedia))
-    readonly property bool glassPlayer: setting("glassPlayer", false) === true
+
     readonly property bool glassCoverBackground: setting("glassCoverBackground", false) === true
-    readonly property bool blurGlassBackdrop: setting("blurGlassBackdrop", false) === true
-    readonly property bool wantsBackdropBlur: opened && glassPlayer && blurGlassBackdrop
+
     readonly property bool showLyrics: setting("showLyrics", false) === true
     readonly property bool showVisualizer: setting("showVisualizer", false) === true
     readonly property bool barVisualizerMirror: setting("barVisualizerMirror", setting("doubleMirrorVisualizer", false)) === true
@@ -109,15 +107,6 @@ Ui.BarWidget {
     }
 
     Process {
-        command: ["python3", decodeURIComponent(String(Qt.resolvedUrl("backdrop-blur.py")).slice(7))]
-        running: root.wantsBackdropBlur
-        onStarted: root.backdropBlurFailed = false
-        onExited: code => {
-            root.backdropBlurFailed = root.wantsBackdropBlur && code !== 0;
-        }
-    }
-
-    Process {
         id: audioMonitor
         command: ["python3", decodeURIComponent(String(Qt.resolvedUrl("audio-levels.py")).slice(7))]
         running: root.wantsAudioFrames
@@ -150,7 +139,7 @@ Ui.BarWidget {
     readonly property color surface: Qt.alpha(ink, 0.055)
     readonly property color surfaceHover: Qt.alpha(ink, 0.11)
     readonly property color outline: Qt.alpha(ink, 0.15)
-    readonly property color accentInk: Commons.Color.accent.hslLightness > 0.56 ? "#171717" : "#ffffff"
+    readonly property color accentInk: Palette.inkOn(Commons.Color.accent, Commons.Color.popups.text, Commons.Color.background)
     readonly property color ink: Commons.Color.popups.text
     readonly property color muted: Qt.tint(ink, Qt.alpha(Commons.Color.popups.background, 0.32))
     readonly property var details: {
@@ -288,51 +277,22 @@ Ui.BarWidget {
         foreground: primary ? root.accentInk : root.ink
     }
 
-    component FinishedPane: Rectangle {
-        id: finishedPane
-
-        property real solidTint: 0
-        property real opacityBoost: 0
-        property real artworkOpacity: 0.24
-
-        border.color: root.glassPlayer ? Qt.alpha(root.ink, 0.24) : root.outline
-
-        function glassTone(tint, opacity) {
-            const base = Qt.tint(Commons.Color.popups.background, Qt.alpha(Commons.Color.accent, tint));
-            return root.glassPlayer ? Qt.alpha(base, Math.min(1, opacity + finishedPane.opacityBoost)) : base;
-        }
-
-        gradient: Gradient {
-            GradientStop {
-                position: 0
-                color: finishedPane.glassTone(root.glassPlayer ? 0.25 : finishedPane.solidTint, 0.77)
-            }
-            GradientStop {
-                position: 0.54
-                color: finishedPane.glassTone(root.glassPlayer ? 0.12 : finishedPane.solidTint * 0.35, 0.72)
-            }
-            GradientStop {
-                position: 1
-                color: finishedPane.glassTone(root.glassPlayer ? 0.04 : 0, 0.88)
-            }
-        }
-
+    component CoverBackdrop: Item {
         Rectangle {
             id: glassMask
             anchors.fill: parent
             anchors.margins: 1
-            radius: finishedPane.radius - 1
+            radius: Style.space(14)
             visible: false
             layer.enabled: glassArtwork.visible
         }
-
         SizedImage {
             id: glassArtwork
             anchors.fill: glassMask
-            visible: root.glassPlayer && root.glassCoverBackground && status === Image.Ready
-            url: root.glassPlayer && root.glassCoverBackground && root.opened ? root.cover : ""
+            visible: panel.glass && root.glassCoverBackground && status === Image.Ready
+            url: panel.glass && root.glassCoverBackground && root.opened ? root.cover : ""
             crop: true
-            opacity: finishedPane.artworkOpacity
+            opacity: 0.14
             layer.enabled: visible
             layer.effect: MultiEffect {
                 autoPaddingEnabled: false
@@ -341,57 +301,6 @@ Ui.BarWidget {
                 blur: 1
                 maskEnabled: true
                 maskSource: glassMask
-            }
-        }
-
-        Rectangle {
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.top: parent.top
-            anchors.leftMargin: Style.space(24)
-            anchors.rightMargin: Style.space(24)
-            anchors.topMargin: 1
-            height: 1
-            visible: root.glassPlayer
-            gradient: Gradient {
-                orientation: Gradient.Horizontal
-                GradientStop {
-                    position: 0
-                    color: "transparent"
-                }
-                GradientStop {
-                    position: 0.38
-                    color: Qt.alpha(root.ink, 0.22)
-                }
-                GradientStop {
-                    position: 1
-                    color: "transparent"
-                }
-            }
-        }
-    }
-
-    component SettingGroup: Rectangle {
-        id: group
-        required property string caption
-        default property alias rows: fields.data
-        Layout.fillWidth: true
-        implicitHeight: fields.implicitHeight + Style.space(28)
-        radius: root.radius
-        color: root.surface
-        border.color: root.outline
-
-        property Item contents: ColumnLayout {
-            id: fields
-            parent: group
-            anchors.fill: parent
-            anchors.margins: Style.space(14)
-            spacing: Style.space(8)
-            Label {
-                Layout.fillWidth: true
-                text: group.caption
-                font.bold: true
-                color: Commons.Color.accent
             }
         }
     }
@@ -904,125 +813,43 @@ Ui.BarWidget {
     }
 
     // A single shell overlay keeps focus and outside-click dismissal shared by both cards.
-    Item {
-        id: panelAnchor
-        parent: trigger
-        width: trigger.width
-        height: trigger.height
-        x: panel.anchorShift
-    }
 
-    TransformWatcher {
-        id: triggerTransform
-        a: panel.anchorWindow?.contentItem ?? null
-        b: trigger
-    }
-
-    KeyboardPanel {
+    OmaPanelFrame {
         id: panel
-        WlrLayershell.namespace: "omarchy-omaplayer"
+        layerName: "omarchy-omaplayer"
         owner: root
         bar: root.bar
-        anchorItem: panelAnchor
+        anchorItem: trigger
         open: root.opened
-        centerOnBar: false
-        padding: 0
-        borderSpec: Border.none()
-        focusTarget: loadedContent
+        configuring: root.showSettings
+        legacyGlassKey: "glassPlayer"
+        legacyBlurKey: "blurGlassBackdrop"
 
-        readonly property real paneGap: Style.space(10)
-        readonly property real desiredPaneWidth: Style.space(442)
-        readonly property bool hasCompanion: root.showSettings
-        readonly property bool sideBySide: hasCompanion && availableCardWidth >= Style.space(760) + paneGap
-        readonly property real playerWidth: fittedContentWidth(sideBySide ? Math.min(desiredPaneWidth, (availableCardWidth - paneGap) / 2) : desiredPaneWidth)
-        readonly property real settingsWidth: sideBySide ? Math.min(desiredPaneWidth, availableCardWidth - playerWidth - paneGap) : playerWidth
-        readonly property real triggerCenter: {
-            triggerTransform.transform;
-            return anchorWindow ? trigger.mapToItem(anchorWindow.contentItem, trigger.width / 2, 0).x : 0;
-        }
-        readonly property real playerLeft: barPos === "left" ? barThickness + gap : barPos === "right" ? screenW - barThickness - playerWidth - gap : Math.max(margin, Math.min(triggerCenter - playerWidth / 2, screenW - margin - playerWidth))
-        readonly property bool settingsOnLeft: playerLeft - margin > screenW - margin - playerLeft - playerWidth
-        readonly property real anchorShift: {
-            if (!sideBySide || root.vertical)
-                return 0;
-            const combinedLeft = playerLeft - (settingsOnLeft ? settingsWidth + paneGap : 0);
-            return combinedLeft + contentWidth / 2 - triggerCenter;
-        }
-
-        contentWidth: sideBySide ? playerWidth + paneGap + settingsWidth : playerWidth
-        contentHeight: fittedContentHeight(loadedContentHeight)
-        onOpenChanged: if (!open)
-            root.close()
-
-        content: FocusScope {
+        content: OmaWorkspace {
             id: dashboard
-            readonly property var panelSurface: {
-                const surface = parent?.parent?.parent;
-                return surface && "radius" in surface && "borderSpec" in surface ? surface : null;
-            }
-            readonly property real heightLimit: panel.availableCardHeight || Style.space(700)
-            readonly property bool stacked: panel.hasCompanion && !panel.sideBySide
-            readonly property real playerHeight: Math.min(playerChrome.implicitHeight + Style.space(20), stacked ? (heightLimit - panel.paneGap) * 0.45 : heightLimit)
-            readonly property real companionLimit: stacked ? heightLimit - panel.paneGap - playerHeight : heightLimit
-            readonly property real settingsHeight: Math.min(settingsChrome.implicitHeight + Style.space(20), companionLimit)
-            readonly property real companionX: !panel.sideBySide || panel.settingsOnLeft ? 0 : panel.playerWidth + panel.paneGap
-            readonly property real companionY: stacked ? (panel.barPos === "bottom" ? 0 : playerHeight + panel.paneGap) : (panel.barPos === "bottom" ? height - settingsHeight : 0)
-            implicitHeight: !panel.hasCompanion ? playerHeight : stacked ? playerHeight + panel.paneGap + settingsHeight : Math.max(playerHeight, settingsHeight)
+            frame: panel
+            mainFocus: settingsButton
+            settingsFocus: closeSettingsButton
+            onSettingsRequested: value => root.showSettings = value
 
-            Binding {
-                target: dashboard.panelSurface
-                property: "color"
-                value: "transparent"
-                when: dashboard.panelSurface !== null
-            }
-
-            Keys.onEscapePressed: {
-                if (root.showSettings)
-                    root.showSettings = false;
-                else
-                    root.close();
-            }
-
-            // The shell card surrounds both panes, including the space between
-            // them and under the shorter pane. Dismiss from those empty areas too.
-            MouseArea {
+            mainPane: Item {
                 anchors.fill: parent
-                acceptedButtons: Qt.AllButtons
-                onClicked: root.close()
-            }
-
-            FinishedPane {
-                id: playerCard
-                x: panel.sideBySide && panel.settingsOnLeft ? panel.settingsWidth + panel.paneGap : 0
-                y: panel.barPos === "bottom" ? dashboard.height - height : 0
-                width: panel.playerWidth
-                height: dashboard.playerHeight
-                radius: Style.space(20)
-                solidTint: 0.17
-
-                MouseArea {
-                    anchors.fill: parent
-                    acceptedButtons: Qt.AllButtons
-                }
-
+                implicitHeight: playerChrome.implicitHeight
+                CoverBackdrop { anchors.fill: parent }
                 ColumnLayout {
                     id: playerChrome
                     anchors.fill: parent
-                    anchors.margins: Style.space(10)
-                    spacing: Style.space(5)
+                    spacing: Style.spacing.panelGap
 
                     RowLayout {
                         Layout.fillWidth: true
-                        Layout.leftMargin: Style.space(8)
-                        Layout.rightMargin: Style.space(8)
-                        Layout.topMargin: Style.space(6)
                         spacing: Style.space(8)
 
                         Label {
                             Layout.fillWidth: true
                             text: strings.t("player")
                             font.bold: true
-                            font.pixelSize: Style.font.subtitle
+                            font.pixelSize: Style.font.title
                         }
                         Rectangle {
                             visible: !!root.player
@@ -1049,15 +876,11 @@ Ui.BarWidget {
                             background: root.surface
                             onClicked: root.saveSetting("showLyrics", !root.showLyrics)
                         }
-                        Control {
+                        OmaSettingsButton {
                             id: settingsButton
-                            iconText: "󰒓"
-                            tooltipText: strings.t(root.showSettings ? "closeSettings" : "settings")
-                            Accessible.name: tooltipText
-                            Accessible.pressed: root.showSettings
-                            selected: root.showSettings
-                            background: root.surface
-                            onClicked: root.showSettings = !root.showSettings
+                            catalog: strings
+                            selected: panel.configuring
+                            onClicked: dashboard.showSettings(!panel.configuring)
                         }
                     }
 
@@ -1286,6 +1109,7 @@ Ui.BarWidget {
                                 visible: root.hasPosition || root.duration > 0
                                 spacing: Style.space(2)
                                 property real position: 0
+                                Component.onCompleted: position = root.player?.position ?? 0
 
                                 Timer {
                                     interval: 250
@@ -1426,269 +1250,232 @@ Ui.BarWidget {
                 }
             }
 
-            FinishedPane {
-                id: settingsCard
-                visible: root.showSettings
-                x: dashboard.companionX
-                y: dashboard.companionY
-                width: panel.settingsWidth
-                height: dashboard.settingsHeight
-                radius: Style.space(20)
-                opacityBoost: 0.08
-                artworkOpacity: 0.14
+            settingsPane: ColumnLayout {
+                id: settingsChrome
+                anchors.fill: parent
+                spacing: Style.spacing.panelGap
 
-                MouseArea {
-                    anchors.fill: parent
-                    acceptedButtons: Qt.AllButtons
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Style.space(8)
+                    Label {
+                        Layout.fillWidth: true
+                        text: strings.t("oma.settings")
+                        font.bold: true
+                        font.pixelSize: Style.font.title
+                    }
+                    OmaSettingsButton {
+                        id: closeSettingsButton
+                        catalog: strings
+                        closing: true
+                        onClicked: dashboard.showSettings(false)
+                    }
                 }
 
-                ColumnLayout {
-                    id: settingsChrome
-                    anchors.fill: parent
-                    anchors.margins: Style.space(10)
-                    spacing: Style.space(5)
+                Flickable {
+                    id: settingsScroll
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    implicitHeight: settingsPage.implicitHeight + Style.space(12)
+                    clip: true
+                    contentWidth: width
+                    contentHeight: implicitHeight
+                    boundsBehavior: Flickable.StopAtBounds
+                    QQC.ScrollBar.vertical: QQC.ScrollBar {}
 
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Layout.leftMargin: Style.space(8)
-                        Layout.rightMargin: Style.space(8)
-                        Layout.topMargin: Style.space(6)
-                        spacing: Style.space(8)
-                        Label {
-                            Layout.fillWidth: true
-                            text: strings.t("settings")
-                            font.bold: true
-                            font.pixelSize: Style.font.subtitle
-                        }
-                        Control {
-                            iconText: "󰅖"
-                            tooltipText: strings.t("closeSettings")
-                            Accessible.name: tooltipText
-                            background: root.surface
-                            onClicked: {
-                                root.showSettings = false;
-                                settingsButton.forceActiveFocus();
-                            }
+                    Connections {
+                        target: root
+                        function onShowSettingsChanged() {
+                            if (root.showSettings)
+                                settingsScroll.contentY = 0;
                         }
                     }
 
-                    Flickable {
-                        id: settingsScroll
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        implicitHeight: settingsPage.implicitHeight + Style.space(12)
-                        clip: true
-                        contentWidth: width
-                        contentHeight: implicitHeight
-                        boundsBehavior: Flickable.StopAtBounds
-                        QQC.ScrollBar.vertical: QQC.ScrollBar {}
+                    ColumnLayout {
+                        id: settingsPage
+                        x: Style.space(8)
+                        y: Style.space(6)
+                        width: parent.width - Style.space(16)
+                        spacing: Style.space(10)
+                        OmaGroup {
+                            title: strings.t("oma.appearance")
+                            OmaAppearance {
+                                Layout.fillWidth: true
+                                frame: panel
+                                catalog: strings
+                            }
+                            Toggle {
+                                visible: panel.glass
+                                text: strings.t("glassCoverBackground")
+                                checked: root.glassCoverBackground
+                                onToggled: root.saveSetting("glassCoverBackground", checked)
+                            }
 
-                        Connections {
-                            target: root
-                            function onShowSettingsChanged() {
-                                if (root.showSettings)
-                                    settingsScroll.contentY = 0;
+                            Toggle {
+                                text: strings.t("autoOnlineArt")
+                                checked: root.autoOnlineArt
+                                onToggled: root.saveSetting("autoOnlineArt", checked)
                             }
                         }
 
-                        ColumnLayout {
-                            id: settingsPage
-                            x: Style.space(8)
-                            y: Style.space(6)
-                            width: parent.width - Style.space(16)
-                            spacing: Style.space(10)
-                            SettingGroup {
-                                caption: strings.t("playerAppearance")
-                                Toggle {
-                                    text: strings.t("glassFinish")
-                                    checked: root.glassPlayer
-                                    onToggled: root.saveSetting("glassPlayer", checked)
-                                }
-                                Toggle {
-                                    visible: root.glassPlayer
-                                    text: strings.t("glassCoverBackground")
-                                    checked: root.glassCoverBackground
-                                    onToggled: root.saveSetting("glassCoverBackground", checked)
-                                }
-                                Toggle {
-                                    visible: root.glassPlayer
-                                    text: strings.t("blurBackdrop")
-                                    checked: root.blurGlassBackdrop
-                                    onToggled: root.saveSetting("blurGlassBackdrop", checked)
-                                }
+                        OmaGroup {
+                            title: strings.t("appearance")
+                            RowLayout {
+                                Layout.fillWidth: true
                                 Label {
-                                    visible: root.wantsBackdropBlur && root.backdropBlurFailed
+                                    text: strings.t("titleWidth")
                                     Layout.fillWidth: true
-                                    text: strings.t("blurUnavailable")
-                                    color: Commons.Color.urgent
-                                    wrapMode: Text.WordWrap
                                 }
-                                Toggle {
-                                    text: strings.t("autoOnlineArt")
-                                    checked: root.autoOnlineArt
-                                    onToggled: root.saveSetting("autoOnlineArt", checked)
+                                Selector {
+                                    implicitWidth: Style.space(110)
+                                    Accessible.name: strings.t("titleWidth")
+                                    model: [strings.t("autoWidth"), strings.t("fixedWidth")]
+                                    currentIndex: root.automaticWidth ? 0 : 1
+                                    onActivated: root.saveSetting("titleWidthMode", currentIndex === 0 ? "auto" : "fixed")
+                                }
+                                Stepper {
+                                    visible: !root.automaticWidth
+                                    Accessible.name: strings.t("titleWidth")
+                                    from: 64
+                                    to: 360
+                                    stepSize: 8
+                                    editable: true
+                                    value: root.fixedTitleWidth
+                                    onValueModified: root.saveSetting("titleWidth", value)
                                 }
                             }
 
-                            SettingGroup {
-                                caption: strings.t("appearance")
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    Label {
-                                        text: strings.t("titleWidth")
-                                        Layout.fillWidth: true
-                                    }
-                                    Selector {
-                                        implicitWidth: Style.space(110)
-                                        Accessible.name: strings.t("titleWidth")
-                                        model: [strings.t("autoWidth"), strings.t("fixedWidth")]
-                                        currentIndex: root.automaticWidth ? 0 : 1
-                                        onActivated: root.saveSetting("titleWidthMode", currentIndex === 0 ? "auto" : "fixed")
-                                    }
-                                    Stepper {
-                                        visible: !root.automaticWidth
-                                        Accessible.name: strings.t("titleWidth")
-                                        from: 64
-                                        to: 360
-                                        stepSize: 8
-                                        editable: true
-                                        value: root.fixedTitleWidth
-                                        onValueModified: root.saveSetting("titleWidth", value)
-                                    }
-                                }
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    Label {
-                                        text: strings.t("idleBarMode")
-                                        Layout.fillWidth: true
-                                    }
-                                    Selector {
-                                        Accessible.name: strings.t("idleBarMode")
-                                        model: [strings.t("idleCompact"), strings.t("idleReserve")]
-                                        currentIndex: root.reserveIdleSpace ? 1 : 0
-                                        onActivated: root.saveSetting("idleBarMode", currentIndex === 1 ? "reserve" : "compact")
-                                    }
-                                }
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: Style.space(10)
-                                    SizeSetting {
-                                        stacked: true
-                                        Layout.preferredWidth: 1
-                                        settingKey: "titleFontSize"
-                                        caption: strings.t("titleFontSize")
-                                        amount: root.titleFontSize
-                                        minimum: 8
-                                        maximum: 18
-                                    }
-
-                                    SizeSetting {
-                                        stacked: true
-                                        Layout.preferredWidth: 1
-                                        settingKey: "barIconSize"
-                                        caption: strings.t("barIconSize")
-                                        amount: root.barIconSize
-                                        minimum: 8
-                                        maximum: 22
-                                    }
-                                }
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: Style.space(10)
-                                    Toggle {
-                                        Layout.preferredWidth: 1
-                                        text: strings.t("scrollTitle")
-                                        checked: root.scrollTitle
-                                        onToggled: root.saveSetting("scrollTitle", checked)
-                                    }
-
-                                    Toggle {
-                                        Layout.preferredWidth: 1
-                                        text: strings.t("barCover")
-                                        checked: root.showBarCover
-                                        onToggled: root.saveSetting("showBarCover", checked)
-                                    }
-                                }
-                            }
-
-                            SettingGroup {
-                                caption: strings.t("barControls")
-                                GridLayout {
-                                    Layout.fillWidth: true
-                                    columns: 2
-                                    columnSpacing: Style.space(10)
-
-                                    Repeater {
-                                        model: root.controls
-                                        Toggle {
-                                            required property string modelData
-                                            Layout.preferredWidth: 1
-                                            text: strings.t(modelData === "play" ? "playPause" : modelData)
-                                            checked: root.enabledControls.includes(modelData)
-                                            onToggled: root.setControl(modelData, checked)
-                                        }
-                                    }
-                                }
-                            }
-
-                            SettingGroup {
-                                id: visualizerGroup
-                                caption: strings.t("displaySettings")
-                                property string target: "player"
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: Style.space(5)
-
-                                    Repeater {
-                                        model: [
-                                            {
-                                                key: "player",
-                                                name: "playerTarget"
-                                            },
-                                            {
-                                                key: "bar",
-                                                name: "barTarget"
-                                            },
-                                            {
-                                                key: "timeline",
-                                                name: "timeline"
-                                            }
-                                        ]
-                                        Control {
-                                            required property var modelData
-                                            Layout.fillWidth: true
-                                            Layout.preferredWidth: 1
-                                            horizontalPadding: Style.space(3)
-                                            fontSize: Style.font.bodySmall
-                                            text: strings.t(modelData.name)
-                                            selected: visualizerGroup.target === modelData.key
-                                            Accessible.pressed: selected
-                                            onClicked: visualizerGroup.target = modelData.key
-                                        }
-                                    }
-                                }
-
+                            RowLayout {
+                                Layout.fillWidth: true
                                 Label {
-                                    text: strings.t("visualizer")
-                                    font.bold: true
-                                    color: Commons.Color.accent
+                                    text: strings.t("idleBarMode")
+                                    Layout.fillWidth: true
+                                }
+                                Selector {
+                                    Accessible.name: strings.t("idleBarMode")
+                                    model: [strings.t("idleCompact"), strings.t("idleReserve")]
+                                    currentIndex: root.reserveIdleSpace ? 1 : 0
+                                    onActivated: root.saveSetting("idleBarMode", currentIndex === 1 ? "reserve" : "compact")
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: Style.space(10)
+                                SizeSetting {
+                                    stacked: true
+                                    Layout.preferredWidth: 1
+                                    settingKey: "titleFontSize"
+                                    caption: strings.t("titleFontSize")
+                                    amount: root.titleFontSize
+                                    minimum: 8
+                                    maximum: 18
                                 }
 
-                                VisualizerSettings {
-                                    target: visualizerGroup.target
+                                SizeSetting {
+                                    stacked: true
+                                    Layout.preferredWidth: 1
+                                    settingKey: "barIconSize"
+                                    caption: strings.t("barIconSize")
+                                    amount: root.barIconSize
+                                    minimum: 8
+                                    maximum: 22
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: Style.space(10)
+                                Toggle {
+                                    Layout.preferredWidth: 1
+                                    text: strings.t("scrollTitle")
+                                    checked: root.scrollTitle
+                                    onToggled: root.saveSetting("scrollTitle", checked)
+                                }
+
+                                Toggle {
+                                    Layout.preferredWidth: 1
+                                    text: strings.t("barCover")
+                                    checked: root.showBarCover
+                                    onToggled: root.saveSetting("showBarCover", checked)
+                                }
+                            }
+                        }
+
+                        OmaGroup {
+                            title: strings.t("barControls")
+                            GridLayout {
+                                Layout.fillWidth: true
+                                columns: 2
+                                columnSpacing: Style.space(10)
+
+                                Repeater {
+                                    model: root.controls
+                                    Toggle {
+                                        required property string modelData
+                                        Layout.preferredWidth: 1
+                                        text: strings.t(modelData === "play" ? "playPause" : modelData)
+                                        checked: root.enabledControls.includes(modelData)
+                                        onToggled: root.setControl(modelData, checked)
+                                    }
+                                }
+                            }
+                        }
+
+                        OmaGroup {
+                            id: visualizerGroup
+                            title: strings.t("displaySettings")
+                            property string target: "player"
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: Style.space(5)
+
+                                Repeater {
+                                    model: [
+                                        {
+                                            key: "player",
+                                            name: "playerTarget"
+                                        },
+                                        {
+                                            key: "bar",
+                                            name: "barTarget"
+                                        },
+                                        {
+                                            key: "timeline",
+                                            name: "timeline"
+                                        }
+                                    ]
+                                    Control {
+                                        required property var modelData
+                                        Layout.fillWidth: true
+                                        Layout.preferredWidth: 1
+                                        horizontalPadding: Style.space(3)
+                                        fontSize: Style.font.bodySmall
+                                        text: strings.t(modelData.name)
+                                        selected: visualizerGroup.target === modelData.key
+                                        Accessible.pressed: selected
+                                        onClicked: visualizerGroup.target = modelData.key
+                                    }
                                 }
                             }
 
                             Label {
-                                Layout.fillWidth: true
-                                visible: root.saveFailed || root.audioFailed
-                                text: strings.t(root.saveFailed ? "saveFailed" : "audioFailed")
-                                color: Commons.Color.urgent
+                                text: strings.t("visualizer")
+                                font.bold: true
+                                color: Commons.Color.accent
                             }
+
+                            VisualizerSettings {
+                                target: visualizerGroup.target
+                            }
+                        }
+
+                        Label {
+                            Layout.fillWidth: true
+                            visible: root.saveFailed || root.audioFailed
+                            text: strings.t(root.saveFailed ? "saveFailed" : "audioFailed")
+                            color: Commons.Color.urgent
                         }
                     }
                 }
